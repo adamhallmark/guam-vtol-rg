@@ -12,7 +12,7 @@ switch u_choice
         exam_TS_Cruise_Climb_Turn_traj
     case 4
         exam_RAMP
-    case 5 
+    case 5
         if ~exist("userStruct",'var')
             addpath('./Bez_Functions/');
         end
@@ -25,4 +25,4 @@ end
 % Execute the model
 sim(model);
 % Create sample output plots
-simPlots_GUAM;
+%simPlots_GUAM;
