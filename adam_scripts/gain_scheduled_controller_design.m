@@ -108,8 +108,24 @@ init_x_eom = [init_euler; init_vbar; init_pqr];
 dt_sim = 0.005; % 200 Hz
 
 %% Design FF+FB controller for hover trim point:
+
+% Set trim states and inputs for computing perturbed states/inputs for
+% linear controller:
+euler_trim = XU0_hover(10:12);
+vbar_trim = XU0_hover(1:3);
+pqr_trim = XU0_hover(4:6);
+x_trim = [euler_trim; vbar_trim; pqr_trim];
+u_trim = XU0_hover(13:end);
+
+% Find linearization SS matrices for reduced model:
 rA_hover = A_hover(4:end, 4:end);
 rB_hover = B_hover(4:end, :);
 rC_hover = eye(9);
 rD_hover = zeros(9, 13);
 
+% Set cost matrices:
+Q = diag([100, 100, 100, 100, 100, 100, 100, 100, 100]);
+R = diag([10, 10, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 100]);
+
+% Obtain feedback gain:
+[K_hover, S, P] = lqr(rA_hover, rB_hover, Q, R, []);
