@@ -3,6 +3,9 @@ close all
 clear
 clc
 
+% Add everything in the GUAM repo to the search path:
+addpath(genpath(".."))
+
 % The purpose of this script is to obtain the linearized models for each of
 % the trim points identified in the Lift+Cruise model in GUAM, and then
 % design the baseline feedforward-feedback controllers that we will use for
@@ -22,7 +25,7 @@ trim_pt = trim_points_table(:,1,1);
 SimIn.numEngines = 9;
 lpc = LpC_model_parameters(SimIn);
 
-rho  = 0.0023769; % slugs/ft^3
+rho  = 0.00237717; % slugs/ft^3
 grav = 32.17405; % ft/sec^2
 
 xeq = trim_pt(1:8); % Pull out the trim condition state variables
@@ -53,3 +56,60 @@ POLY = 1;
 % 12-20 (comments) in the function:
 % "../vehicles/Lift+Cruise/Control/get_lin_dynamics_heading.m" for a
 % description
+
+%% Test Nonlinear Sim
+
+% Clear prior data:
+clear A B C D XU0 trim_pt xeq ueq
+
+% Choose operating point and design a feedforward-feedback controller:
+trim_pt = trim_points_table(:,1,2);
+
+xeq = trim_pt(1:8); % Pull out the trim condition state variables
+ueq = trim_pt(9:end); % Pull out the trim condition effector variables
+
+% Get the full linearized state-space representation
+[A_hover, B_hover, C_hover, D_hover, XU0_hover] = ...
+    get_lin_dynamics_heading(lpc, xeq, ueq, NS, NP, rho, grav);
+
+% Set up parameter values that are necessary to call "run_LPC_aero.m"
+dummy = load("Model+Units_TEST.mat", "SimIn");
+Units = dummy.SimIn.Units;
+clear dummy
+Model = lpc;
+rho = 0.00237717; % air density (0 ft @ Standard Atmos.) - slug/ft^3
+a = 1116.45; % speed of sound (0 ft @ Standard Atmos.) - ft/s
+surf_alloc_mat = [1, -1, 0, 0; ...
+                  1,  1, 0, 0; ...
+                  0,  0, 1, 0; ...
+                  0,  0, 1, 0; ...
+                  0,  0, 0, 1;]; % fixed allocation matrix for surface map
+
+dummy = load("SimPar_STRUCT.mat", "SimPar_STRUCT");
+Actuator = dummy.SimPar_STRUCT.Actuator;
+Engine = dummy.SimPar_STRUCT.Engine;
+
+J = lpc.I;
+m = lpc.mass;
+
+
+% Set initial conditions for actuator dynamics integrator and state
+% derivative integrator:
+init_surf_dyn = surf_alloc_mat * ueq(1:4);
+init_eng_dyn = ueq(5:end);
+
+init_euler = XU0_hover(10:12);
+init_vbar = XU0_hover(1:3);
+init_pqr = XU0_hover(4:6);
+
+init_x_eom = [init_euler; init_vbar; init_pqr];
+
+% Set time step for fixed-step simulation:
+dt_sim = 0.005; % 200 Hz
+
+%% Design FF+FB controller for hover trim point:
+rA_hover = A_hover(4:end, 4:end);
+rB_hover = B_hover(4:end, :);
+rC_hover = eye(9);
+rD_hover = zeros(9, 13);
+

@@ -23,7 +23,6 @@ switch u_choice
 end
 
 % Execute the model
-SimPar_STRUCT = SimPar.Value;
 sim(model);
 % Create sample output plots
 %simPlots_GUAM;
@@ -39,19 +38,11 @@ plot(SimOut.Env.Atmosphere.Density.Time / 60, ...
 grid minor
 xlabel('Time (min)')
 ylabel('Air Density (units?)')
-legend show
 
 subplot(2,1,2)
-plot(SimOut.Env.Atmosphere.SpeedOfSound.Time / 60, ...
-    SimOut.Env.Atmosphere.SpeedOfSound.Data, 'LineWidth', 2, ...
-    'DisplayName', "Speed of Sound")
+plot(SimOut.Env.Atmosphere.Pressure.Time / 60, ...
+    SimOut.Env.Atmosphere.Pressure.Data, 'LineWidth', 2, 'DisplayName', "Pressure")
 grid minor
 xlabel('Time (min)')
-ylabel('Air Speed of Sound (units?)')
+ylabel('Air Pressure (units?)')
 legend show
-
-figure()
-plot(SimOut.Vehicle.EOM.WorldRelativeData.AltMSL.Time, ...
-    SimOut.Vehicle.EOM.WorldRelativeData.AltMSL.Data, 'LineWidth', 2)
-xlabel('Time')
-ylabel('Altitude (MSL) (feet?)')
