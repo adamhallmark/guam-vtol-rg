@@ -139,4 +139,41 @@ Kr_hover = - pinv((rCr_hover/rA_cl_hover)*rB_hover);
 
 % Set reference step command:
 ref_cmd_trim = rCr_hover * x_trim;
-ref_cmd_STEP = [5; 0; 0];
+ref_cmd_STEP = [10; 0; 0];
+
+%% Check FF gain equation for uniqueness:
+
+% Compute T matrix:
+T = rCr_hover * (rA_cl_hover \rB_hover);
+
+% Get dimensions
+[p, m] = size(T);
+rankT = rank(T);
+
+% Display results
+fprintf('T is a %d x %d matrix\n', p, m);
+fprintf('Rank of T: %d\n', rankT);
+
+% Analyze system solvability
+if rankT < p
+    disp('❌ Inconsistent: not all step references can be tracked.');
+elseif m > p
+    disp('✅ Underdetermined: infinite solutions exist for F.');
+elseif m == p
+    disp('✅ Exactly determined: unique solution exists for F.');
+elseif m < p
+    if rankT == m
+        disp('❌ Overdetermined but full column rank: least-squares solution possible, but not exact tracking.');
+    else
+        disp('❌ Overdetermined and rank-deficient: no exact tracking possible.');
+    end
+end
+
+%% Calculate theoretical steady-state values for given reference:
+
+x_ss = -rA_cl_hover \ (rB_hover * Kr_hover * ref_cmd_STEP);
+
+% Check that the output error is zero
+y_ss = rCr_hover * x_ss;
+fprintf('Steady-state output: \n'); disp(y_ss);
+fprintf('Reference input: \n'); disp(ref_cmd_STEP);

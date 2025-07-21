@@ -4,21 +4,15 @@ clear
 clc
 
 % Add everything in the GUAM repo to the search path:
-addpath(genpath(".."))
-
-% The purpose of this script is to obtain the linearized models for each of
-% the trim points identified in the Lift+Cruise model in GUAM, and then
-% design the baseline feedforward-feedback controllers that we will use for
-% the gain scheduling study.
+addpath(genpath("."))
 
 % Load pre-determined trim points from .mat file:
-load("../vehicles/Lift+Cruise/Trim_poly_XEQ_ConcatV4p0.mat", "XEQ")
+load("vehicles/Lift+Cruise/Trim_poly_XEQ_ConcatV4p0.mat", "XEQ")
 trim_points_table = XEQ;
 clear XEQ
 
 % Prepare input arguments for the function that we will call to obtain the
-% linearized model matrices for THE FIRST TRIM POINT (will create a loop
-% after a successful test with only one trim point)
+% linearized model matrices for THE FIRST TRIM POINT
 
 trim_pt = trim_points_table(:,1,1);
 
@@ -47,17 +41,12 @@ POLY = 1;
     NS, NP, rho, grav);
 
 % We have successfully obtained the full linearized model for the first
-% trim point in the trim table... Next step is to set up a loop that
-% obtains all of the ABCD matrices and XU0 points for all (84) trim
-% points. I think it will be good to first think a little bit about how we
-% are going to obtain the feedback gains and how we are going to
-% interpolate between controller gains before doing this loop. For the
-% ordering of states and inputs in the linearized model, see lines
-% 12-20 (comments) in the function:
+% trim point in the trim table... For the ordering of states and inputs in
+% the linearized model, see lines 12-20 (comments) in the function:
 % "../vehicles/Lift+Cruise/Control/get_lin_dynamics_heading.m" for a
 % description
 
-%% Test Nonlinear Sim
+%% Setup data for my nonlinear sim
 
 % Clear prior data:
 clear A B C D XU0 trim_pt xeq ueq
@@ -73,7 +62,7 @@ ueq = trim_pt(9:end); % Pull out the trim condition effector variables
     get_lin_dynamics_heading(lpc, xeq, ueq, NS, NP, rho, grav);
 
 % Set up parameter values that are necessary to call "run_LPC_aero.m"
-dummy = load("Model+Units_TEST.mat", "SimIn");
+dummy = load("adam_scripts/Model+Units_TEST.mat", "SimIn");
 Units = dummy.SimIn.Units;
 clear dummy
 Model = lpc;
@@ -85,7 +74,7 @@ surf_alloc_mat = [1, -1, 0, 0; ...
                   0,  0, 1, 0; ...
                   0,  0, 0, 1;]; % fixed allocation matrix for surface map
 
-dummy = load("SimPar_STRUCT.mat", "SimPar_STRUCT");
+dummy = load("adam_scripts/SimPar_STRUCT.mat", "SimPar_STRUCT");
 Actuator = dummy.SimPar_STRUCT.Actuator;
 Engine = dummy.SimPar_STRUCT.Engine;
 
@@ -98,45 +87,52 @@ m = lpc.mass;
 init_surf_dyn = surf_alloc_mat * ueq(1:4);
 init_eng_dyn = ueq(5:end);
 
+% Set initial state vector:
 init_euler = XU0_hover(10:12);
 init_vbar = XU0_hover(1:3);
 init_pqr = XU0_hover(4:6);
 
 init_x_eom = [init_euler; init_vbar; init_pqr];
 
+% Set trim input vector:
+u_trim = ueq;
+
+% Set constant perturbed input vector:
+% (order: del_f, del_a, del_e, del_r, om1-om8, om9)
+
+delta_u_CONSTANT = [0; 0; 0; 0; 0; 0; 0; 0; 1; 1; 1; 1; 0];
+
 % Set time step for fixed-step simulation:
 dt_sim = 0.005; % 200 Hz
 
-%% Design FF+FB controller for hover trim point:
+%% Setup data for GUAM_copy sim
 
-% Set trim states and inputs for computing perturbed states/inputs for
-% linear controller:
-euler_trim = XU0_hover(10:12);
-vbar_trim = XU0_hover(1:3);
-pqr_trim = XU0_hover(4:6);
-x_trim = [euler_trim; vbar_trim; pqr_trim];
-u_trim = XU0_hover(13:end);
+% Get rotation matrix from body frame to heading frame:\
+init_phi = init_euler(1);
+init_theta = init_euler(2);
+init_psi = init_euler(3);
 
-% Find linearization SS matrices for reduced model:
-rA_hover = A_hover(4:end, 4:end);
-rB_hover = B_hover(4:end, :);
-rC_hover = eye(9);
-rD_hover = zeros(9, 13);
+R_bar = (rotx(rad2deg(init_phi)).' * roty(rad2deg(init_theta)).').';
 
-% Set cost matrices:
-Q = diag([100, 100, 100, 100, 100, 100, 100, 100, 100]);
-R = diag([10, 10, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 100]);
+% Get initial velocity in body frame coordinates:
+init_Vel_bEb = R_bar.' * init_vbar;
 
-% Obtain feedback gain:
-[Kx_hover, S, P] = lqr(rA_hover, rB_hover, Q, R, []);
+% Set initial position and angular velocity:
+init_Pos_bii = [0; 0; 0];
+init_Omeg_BIb = init_pqr;
 
-% Compute feedforward gain to ensure zero steady state error for tracking 
-% step inputs of heading frame velocity:
-rCr_hover = [zeros(3), eye(3), zeros(3)];
-rA_cl_hover = (rA_hover - rB_hover*Kx_hover);
+% Get initial quaternion transformation from inertial to body frame:
+init_Q_i2b = QmultSeq(QrotZ(init_psi),QrotY(init_theta),QrotX(init_phi))';
 
-Kr_hover = - pinv((rCr_hover/rA_cl_hover)*rB_hover);
+% Assign initial state for integrator in Vehicle EOM -> Equations of 
+% Motion -> Simple
+init_state_guam = [init_Vel_bEb; init_Omeg_BIb; init_Pos_bii; init_Q_i2b];
 
-% Set reference step command:
-ref_cmd_trim = rCr_hover * x_trim;
-ref_cmd_STEP = [5; 0; 0];
+% Run script that preps GUAM copy to be run:
+exam_TS_Hover2Cruise_traj_COPY
+
+% Set constant input vector for GUAM copy at location:
+% Vehicle Generalized Control -> Lift+Cruise Control -> 
+input_vec = u_trim + delta_u_CONSTANT;
+engine_cmd_CONSTANT = input_vec(5:end);
+surf_cmd_CONSTANT = input_vec(1:4);
